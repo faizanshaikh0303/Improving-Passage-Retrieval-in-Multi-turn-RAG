@@ -15,16 +15,17 @@ from transformers import AutoTokenizer, AutoModel
 import pandas as pd
 import math
 
-clapnq_CORPUS_FILE = "./clapnq.jsonl"
-clapnq_QUERY_FILE = "./clapnq_rewrite.jsonl"
-cloud_CORPUS_FILE = "./cloud.jsonl"
-cloud_QUERY_FILE = "./cloud_rewrite.jsonl"
-fiqa_CORPUS_FILE = "./fiqa.jsonl"
-fiqa_QUERY_FILE = "./fiqa_rewrite.jsonl"
-govt_CORPUS_FILE = "./govt.jsonl"
-govt_QUERY_FILE = "./govt_rewrite.jsonl"
-BM25_OUTPUT_FILE = "bm25_results.jsonl"
-FAISS_OUTPUT_FILE = "faiss_results.jsonl"
+clapnq_CORPUS_FILE = "./docs/clapnq.jsonl"
+clapnq_QUERY_FILE = "./docs/clapnq_rewrite.jsonl"
+cloud_CORPUS_FILE = "./docs/cloud.jsonl"
+cloud_QUERY_FILE = "./docs/cloud_rewrite.jsonl"
+fiqa_CORPUS_FILE = "./docs/fiqa.jsonl"
+fiqa_QUERY_FILE = "./docs/fiqa_rewrite.jsonl"
+govt_CORPUS_FILE = "./docs/govt.jsonl"
+govt_QUERY_FILE = "./docs/govt_rewrite.jsonl"
+BM25_OUTPUT_FILE = "./results/bm25_results.jsonl"
+FAISS_OUTPUT_FILE = "./results/faiss_results.jsonl"
+HYBRID_OUTPUT_FILE = "./results/hybrid_results.jsonl"
 TOP_K = 10
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
@@ -237,8 +238,8 @@ def hybrid_retrieval(passage_ids, passages, queries, name, alpha=ALPHA, model_na
     dense_queries = torch.cat(dense_queries, dim=0).cpu().float().numpy()
     faiss.normalize_L2(dense_queries)
 
-    output_file = f"hybrid_results.jsonl"
-    with jsonlines.open(output_file, mode='a') as writer:
+    
+    with jsonlines.open(HYBRID_OUTPUT_FILE, mode='a') as writer:
         for qi, q in enumerate(tqdm(queries, desc="Combining results")):
             # Sparse results
             q_tokens = bm25s.tokenize(q["text"], stemmer=stemmer)
@@ -275,7 +276,7 @@ def hybrid_retrieval(passage_ids, passages, queries, name, alpha=ALPHA, model_na
                 "Collection": f"mt-rag-{name}-hybrid"
             })
 
-    print(f"Hybrid results saved to {output_file}")
+    print(f"Hybrid results saved to {HYBRID_OUTPUT_FILE}")
 
 hybrid_retrieval(clapnq_passage_ids, clapnq_passages, clapnq_queries, "clapnq")
 hybrid_retrieval(cloud_passage_ids, cloud_passages, cloud_queries, "cloud")
