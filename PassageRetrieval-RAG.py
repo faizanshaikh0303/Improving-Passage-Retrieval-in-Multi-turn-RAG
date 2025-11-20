@@ -10,10 +10,6 @@ import faiss
 import numpy as np
 from tqdm import tqdm
 import Stemmer
-import daft
-from transformers import AutoTokenizer, AutoModel
-import pandas as pd
-import math
 from sentence_transformers import CrossEncoder
 
 
@@ -31,47 +27,48 @@ HYBRID_OUTPUT_FILE = "./results/hybrid_rerank_results.jsonl"
 TOP_K = 10
 MODEL_NAME = "BAAI/bge-base-en-v1.5"
 
+# load passages 
 def load_passages(CORPUS_FILE):
-  passages = []
-  passage_ids = []
+    passages = []
+    passage_ids = []
 
-  with jsonlines.open(CORPUS_FILE, "r") as reader:
-      for item in reader:
-          text = item.get("text") or item.get("content")
-          doc_id = item.get("_id") or item.get("document_id")
-          passages.append(text)
-          passage_ids.append(doc_id)
+    with jsonlines.open(CORPUS_FILE, "r") as reader:
+        for item in reader:
+            text = item.get("text") or item.get("content")
+            doc_id = item.get("_id") or item.get("document_id")
+            passages.append(text)
+            passage_ids.append(doc_id)
 
-  print(f"Loaded {len(passages)} passages")
-  return passages, passage_ids
+    print(f"Loaded {len(passages)} passages")
+    return passages, passage_ids
 
+# load queries
 def parse_queries(QUERY_FILE):
-  raw_queries = []
-  with jsonlines.open(QUERY_FILE, "r") as reader:
-      for item in reader:
-          raw_queries.append(item)
+    raw_queries = []
+    with jsonlines.open(QUERY_FILE, "r") as reader:
+        for item in reader:
+            raw_queries.append(item)
 
-  # Parse queries into conversation_id, task_id, and text
-  queries_parsed = []
-  for q in raw_queries:
-      _id = q["_id"]
-      text = q["text"].strip()
+    # Parse queries into conversation_id, task_id, and text
+    queries_parsed = []
+    for q in raw_queries:
+        _id = q["_id"]
+        text = q["text"].strip()
 
-      # Split _id into conversation_id and turn number
-      if "<::>" in _id:
-          conv_id, turn_num = _id.split("<::>")
-      else:
-          conv_id, turn_num = _id, "0"
+        if "<::>" in _id:
+            conv_id, turn_num = _id.split("<::>")
+        else:
+            conv_id, turn_num = _id, "0"
 
-      queries_parsed.append({
-          "conversation_id": conv_id,
-          "task_id": _id,
-          "text": text
-      })
+        queries_parsed.append({
+            "conversation_id": conv_id,
+            "task_id": _id,
+            "text": text
+        })
 
-  print("Example parsed query:", queries_parsed[0])
-  print("Total queries:", len(queries_parsed))
-  return queries_parsed
+    print("Example parsed query:", queries_parsed[0])
+    print("Total queries:", len(queries_parsed))
+    return queries_parsed
 
 
 clapnq_passages, clapnq_passage_ids = load_passages(clapnq_CORPUS_FILE)
@@ -86,34 +83,27 @@ govt_queries = parse_queries(govt_QUERY_FILE)
 
 ALPHA = 0.6
 
-def hybrid_retrieval(
-    passage_ids,
-    passages,
-    queries,
-    name,
-    alpha=ALPHA,
-    model_name=MODEL_NAME,
-    batch_size=1024,
-):
+def hybrid_retrieval(passage_ids, passages, queries, name, alpha=ALPHA, model_name=MODEL_NAME, batch_size=1024):
+
     print(f"\nRunning hybrid retrieval for {name} (alpha={alpha})")
 
-    # --- Sparse: BM25 ---
+    # Sparse - BM25
     print("Building BM25 index...")
     stemmer = Stemmer.Stemmer("en")
     tokenized_corpus = bm25s.tokenize(passages, stopwords="en", stemmer=stemmer)
     bm25 = bm25s.BM25()
     bm25.index(tokenized_corpus)
 
-    # --- Dense: SentenceTransformer + FAISS ---
+    # Dense - BAAI/bge-base-en-v1.5
     print("Loading dense model:", model_name)
     dense_model = SentenceTransformer(model_name, device=device)
 
-    # --- Load Cross-Encoder for reranking ---
+    # Reranker - BAAI/bge-reranker-v2-m3
     reranker_model_name = "BAAI/bge-reranker-v2-m3"
     print("Loading reranker:", reranker_model_name)
     reranker = CrossEncoder(reranker_model_name, device=device)
 
-    # -------- Encode passages in batches (no Daft) --------
+    # Encoding passages
     print("Encoding passages with SentenceTransformer...")
     passage_emb_list = []
     for start in tqdm(range(0, len(passages), batch_size), desc="Passage batches"):
@@ -134,7 +124,7 @@ def hybrid_retrieval(
     index = faiss.IndexFlatIP(dim)
     index.add(passage_emb)
 
-    # -------- Encode queries in batches (no Daft) --------
+    # Encoding Queries
     print("Encoding queries with SentenceTransformer...")
     dense_queries_list = []
     query_texts = [q["text"] for q in queries]
@@ -153,12 +143,12 @@ def hybrid_retrieval(
     dense_queries = torch.cat(dense_queries_list, dim=0).cpu().float().numpy()
     faiss.normalize_L2(dense_queries)
 
-    # --- Hybrid retrieval + reranking ---
+    # Hybrid Retrieval + Reranking
     with jsonlines.open(HYBRID_OUTPUT_FILE, mode="a") as writer:
         for qi, q in enumerate(tqdm(queries, desc="Combining results")):
             q_text = q["text"]
 
-            # Sparse results (BM25)
+            # Sparse results (BM25) - top_50
             q_tokens = bm25s.tokenize(q_text, stemmer=stemmer)
             s_results, s_scores = bm25.retrieve(
                 q_tokens,
@@ -166,11 +156,11 @@ def hybrid_retrieval(
                 corpus=passages,
             )
 
-            # Dense results (FAISS)
+            # Dense results (FAISS) - top_50
             q_emb = dense_queries[qi].reshape(1, -1)
             d_scores, d_idx = index.search(q_emb, 5 * TOP_K)
 
-            # Normalize scores
+            # Normalize scores - [0,1]
             s_scores = (s_scores - np.min(s_scores)) / (np.max(s_scores) - np.min(s_scores) + 1e-9)
             d_scores = (d_scores - np.min(d_scores)) / (np.max(d_scores) - np.min(d_scores) + 1e-9)
 
@@ -186,7 +176,7 @@ def hybrid_retrieval(
                 pid = passage_ids[idx]
                 combined_scores[pid] = combined_scores.get(pid, 0.0) + float(alpha * d_score)
 
-            # --- Select top 50 (or 5*TOP_K) hybrid candidates ---
+            # --- Select top 50 hybrid candidates ---
             top_candidates = sorted(
                 combined_scores.items(),
                 key=lambda x: x[1],
@@ -196,11 +186,9 @@ def hybrid_retrieval(
             candidate_pids = [pid for pid, _ in top_candidates]
             candidate_texts = [passages[passage_ids.index(pid)] for pid in candidate_pids]
 
-            # --- Cross-Encoder RERANKING ---
+            # Rerank the top 50 and select top 10
             pairs = [(q_text, passage_text) for passage_text in candidate_texts]
             ce_scores = reranker.predict(pairs)
-
-            # Sort by CE score
             reranked_idx = np.argsort(ce_scores)[::-1][:TOP_K]
 
             context_list = []
@@ -209,6 +197,7 @@ def hybrid_retrieval(
                 score = float(ce_scores[idx])
                 context_list.append({"document_id": pid, "score": score})
 
+            # write to the results file
             writer.write(
                 {
                     "conversation_id": q["conversation_id"],
