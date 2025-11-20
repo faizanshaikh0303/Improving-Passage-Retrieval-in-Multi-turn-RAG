@@ -49,9 +49,13 @@ nDCG@K: Normalized Discounted Cumulative Gain, measuring ranking quality.
 Results by Collection
 
 Collection   R@1     R@3    R@5   R@10   nDCG@1   nDCG@3   nDCG@5   nDCG@10
+
 clapnq      0.219   0.431  0.522  0.656  0.524    0.478    0.503     0.560
+
 cloud       0.203   0.350  0.398  0.487  0.404    0.364    0.379     0.420
+
 fiqa        0.156   0.297  0.371  0.486  0.350    0.320    0.348     0.396
+
 govt        0.186   0.383  0.481  0.603  0.408    0.399    0.437     0.488
 
 # Average (Across Collections)
