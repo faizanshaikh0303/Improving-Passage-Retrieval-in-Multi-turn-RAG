@@ -2,7 +2,7 @@
 Report for PA3: Improving Passage Retrieval in Multi-turn RAG
 Name: Faizan Shaikh
 
-Methodology:
+# Methodology:
 The code takes in corpus and query files in JSONL format. Corpus/Queries are parsed to extract id and text. The text is cleaned and prepared for tokenization.
 
 Sparse Retrieval (BM25)
@@ -34,7 +34,7 @@ The final stage utilizes a Cross-Encoder model, specifically BAAI/bge-reranker-v
 Unlike the bi-encoder used in the dense stage (which encodes query and document separately), the Cross-Encoder processes the query and document simultaneously, allowing it to capture fine-grained interactions between queries and passage tokens. 
 The top K=10 documents are selected based on these re-calculated scores.
 
-Experiments and Results:
+# Experiments and Results:
 Datasets
 CLAPNQ: 183408 passages 208 queries
 CLOUD: 61022 passages 188 queries
@@ -49,20 +49,27 @@ nDCG@K: Normalized Discounted Cumulative Gain, measuring ranking quality.
 Results by Collection
 
 Collection   R@1     R@3    R@5   R@10   nDCG@1   nDCG@3   nDCG@5   nDCG@10
+
 clapnq      0.219   0.431  0.522  0.656  0.524    0.478    0.503     0.560
+
 cloud       0.203   0.350  0.398  0.487  0.404    0.364    0.379     0.420
+
 fiqa        0.156   0.297  0.371  0.486  0.350    0.320    0.348     0.396
+
 govt        0.186   0.383  0.481  0.603  0.408    0.399    0.437     0.488
 
-Average (Across Collections)
+# Average (Across Collections)
 
                    @1     @3     @5    @10
+                   
 Baseline Recall   0.08   0.15   0.20   0.27
+
 Recall            0.192  0.368  0.446  0.562
+
 nDCG              0.425  0.393  0.420  0.469
 
 
-Analysis and Discussion:
+# Analysis and Discussion:
 
 Performance Gains
 
@@ -82,7 +89,7 @@ By re-evaluating the top 50 candidates using a computationally heavier but more 
 This ensures that the top-ranked documents (Top-1 to Top-3) are highly relevant, as evidenced by the strong nDCG@1 scores (e.g., 0.52 for ClapNQ).
 
 
-Discussion and Conclusion
+# Discussion and Conclusion
 
 Encoding all passages in batches leverages colab GPU efficiently.
 FAISS allows fast similarity search even on large corpora.
