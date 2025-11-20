@@ -176,7 +176,7 @@ def hybrid_retrieval(passage_ids, passages, queries, name, alpha=ALPHA, model_na
                 pid = passage_ids[idx]
                 combined_scores[pid] = combined_scores.get(pid, 0.0) + float(alpha * d_score)
 
-            # --- Select top 50 hybrid candidates ---
+            # top_50 candidates
             top_candidates = sorted(
                 combined_scores.items(),
                 key=lambda x: x[1],
