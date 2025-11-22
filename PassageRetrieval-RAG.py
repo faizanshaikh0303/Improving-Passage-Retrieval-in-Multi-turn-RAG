@@ -81,7 +81,19 @@ cloud_queries = parse_queries(cloud_QUERY_FILE)
 fiqa_queries = parse_queries(fiqa_QUERY_FILE)
 govt_queries = parse_queries(govt_QUERY_FILE)
 
-ALPHA = 0.6
+def compute_adaptive_alpha(s_top_idx, d_top_idx):
+    s_set = set(s_top_idx)
+    d_set = set(d_top_idx)
+    overlap = len(s_set & d_set) / max(1, len(s_set | d_set))
+
+    if overlap < 0.3:
+        alpha = 0.80
+    elif overlap > 0.7:
+        alpha = 0.45
+    else:
+        alpha = 0.60
+        
+    return alpha
 
 def hybrid_retrieval(passage_ids, passages, queries, name, alpha=ALPHA, model_name=MODEL_NAME, batch_size=1024):
 
@@ -164,6 +176,11 @@ def hybrid_retrieval(passage_ids, passages, queries, name, alpha=ALPHA, model_na
             s_scores = (s_scores - np.min(s_scores)) / (np.max(s_scores) - np.min(s_scores) + 1e-9)
             d_scores = (d_scores - np.min(d_scores)) / (np.max(d_scores) - np.min(d_scores) + 1e-9)
 
+            # Compute adaptive alpha based on rank agreement
+            s_top_idx = [passages.index(txt) for txt in s_results[0]]
+            d_top_idx = list(d_idx[0])
+            alpha_q = compute_adaptive_alpha(s_top_idx, d_top_idx)
+            print(f"alpha chosen: {alpha_q}")
             combined_scores = {}
 
             # Add sparse (BM25) scores
