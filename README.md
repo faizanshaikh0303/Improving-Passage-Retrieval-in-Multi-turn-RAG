@@ -24,6 +24,19 @@ Limitations: embedding computation is GPU intensive; requires sufficient memory 
 Combining (Sparse + Dense)
 
 Normalization: Scores from BM25 and FAISS are Min-Max normalized to ensure they share a common scale [0, 1].
+Adaptive Weighting: Instead of a static parameter, an adaptive alpha ( ) is 𝜶 computed for each query to dynamically balance the retrieval streams. This is 
+determined by calculating the overlap between the top 50 indices retrieved by Sparse 
+and Dense methods:
+
+𝑂𝑣𝑒𝑟𝑙𝑎𝑝 = |𝑆_𝑡𝑜𝑝 ∩ 𝐷_𝑡𝑜𝑝| / |𝑆_𝑡𝑜𝑝 ∪ 𝐷_𝑡𝑜𝑝|
+
+The  value is assigned based on the following logic: 𝜶
+Low Overlap (< 0.3):  = 0.80. When the two methods disagree significantly, the 𝜶 system assumes a vocabulary mismatch and prioritizes the Dense retriever to capture 
+semantic intent. 
+High Overlap (> 0.7):  = 0.45. When both methods retrieve similar documents, the 𝜶 system balances the two, giving slightly more weight to the exact keyword precision 
+of Sparse retrieval. 
+Default:  = 0.60. For moderate overlap, the system utilizes the baseline preference for 𝜶 dense retrieval
+
 Weighting: The final hybrid score is calculated using an alpha parameter (𝜶 = 0.6), prioritizing dense retrieval slightly higher than sparse:
                                         Shybrid= (1-𝜶)(Ssparse) + (𝜶)(Sdense)
 Candidate Selection: The top 50 candidates with the highest hybrid scores are passed to the reranker.
