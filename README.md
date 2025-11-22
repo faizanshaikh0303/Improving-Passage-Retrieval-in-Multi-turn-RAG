@@ -86,7 +86,7 @@ nDCG              0.425  0.393  0.420  0.472
 
 Performance Gains
 
-The implemented method yields a 108.1% increase in Recall@10 (0.27 to 0.562) and a 123.3% increase in nDCG@10 (0.21 to 0.469) compared to the BM25 baseline.
+The implemented method yields a 109% increase in Recall@10 (0.27 to 0.565) and a 125% increase in nDCG@10 (0.21 to 0.472) compared to the BM25 baseline.
 This substantial improvement validates the importance of the multi-stage pipeline.
 
 Synergistic Retrieval
