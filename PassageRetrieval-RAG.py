@@ -11,6 +11,11 @@ import numpy as np
 from tqdm import tqdm
 import Stemmer
 from sentence_transformers import CrossEncoder
+import os
+
+EMB_DIR = "./embeddings"
+os.makedirs(EMB_DIR, exist_ok=True)
+
 
 
 clapnq_CORPUS_FILE = "./docs/clapnq.jsonl"
@@ -95,9 +100,9 @@ def compute_adaptive_alpha(s_top_idx, d_top_idx):
         
     return alpha
 
-def hybrid_retrieval(passage_ids, passages, queries, name, alpha=ALPHA, model_name=MODEL_NAME, batch_size=1024):
+def hybrid_retrieval(passage_ids, passages, queries, name, model_name=MODEL_NAME, batch_size=1024):
 
-    print(f"\nRunning hybrid retrieval for {name} (alpha={alpha})")
+    print(f"\nRunning hybrid retrieval")
 
     # Sparse - BM25
     print("Building BM25 index...")
@@ -115,45 +120,65 @@ def hybrid_retrieval(passage_ids, passages, queries, name, alpha=ALPHA, model_na
     print("Loading reranker:", reranker_model_name)
     reranker = CrossEncoder(reranker_model_name, device=device)
 
-    # Encoding passages
-    print("Encoding passages with SentenceTransformer...")
-    passage_emb_list = []
-    for start in tqdm(range(0, len(passages), batch_size), desc="Passage batches"):
-        batch_texts = passages[start:start + batch_size]
-        with torch.no_grad():
-            emb = dense_model.encode(
-                batch_texts,
-                convert_to_tensor=True,
-                device=device,
-                show_progress_bar=False,
-            )
-        passage_emb_list.append(emb)
+    passage_emb_path = os.path.join(EMB_DIR, f"{name}_passages.npy")
 
-    passage_emb = torch.cat(passage_emb_list, dim=0).cpu().float().numpy()
-    faiss.normalize_L2(passage_emb)
+    if os.path.exists(passage_emb_path):
+        print(f"Loading cached passage embeddings from {passage_emb_path}...")
+        passage_emb = np.load(passage_emb_path)
+    else:
+
+        # Encoding passages
+        print("Encoding passages with SentenceTransformer...")
+        passage_emb_list = []
+        for start in tqdm(range(0, len(passages), batch_size), desc="Passage batches"):
+            batch_texts = passages[start:start + batch_size]
+            with torch.no_grad():
+                emb = dense_model.encode(
+                    batch_texts,
+                    convert_to_tensor=True,
+                    device=device,
+                    show_progress_bar=False,
+                )
+            passage_emb_list.append(emb)
+
+        passage_emb = torch.cat(passage_emb_list, dim=0).cpu().float().numpy()
+        faiss.normalize_L2(passage_emb)
+        # Save to disk for future runs
+        np.save(passage_emb_path, passage_emb)
+        print(f"Saved passage embeddings to {passage_emb_path}")
 
     dim = passage_emb.shape[1]
     index = faiss.IndexFlatIP(dim)
     index.add(passage_emb)
 
-    # Encoding Queries
-    print("Encoding queries with SentenceTransformer...")
-    dense_queries_list = []
+    query_emb_path = os.path.join(EMB_DIR, f"{name}_queries.npy")
     query_texts = [q["text"] for q in queries]
 
-    for start in tqdm(range(0, len(query_texts), batch_size), desc="Query batches"):
-        batch_texts = query_texts[start:start + batch_size]
-        with torch.no_grad():
-            emb = dense_model.encode(
-                batch_texts,
-                convert_to_tensor=True,
-                device=device,
-                show_progress_bar=False,
-            )
-        dense_queries_list.append(emb)
+    if os.path.exists(query_emb_path):
+        print(f"Loading cached query embeddings from {query_emb_path}...")
+        dense_queries = np.load(query_emb_path)
+    else:
+        # Encoding Queries
+        print("Encoding queries with SentenceTransformer...")
+        dense_queries_list = []
+        # query_texts = [q["text"] for q in queries]
 
-    dense_queries = torch.cat(dense_queries_list, dim=0).cpu().float().numpy()
-    faiss.normalize_L2(dense_queries)
+        for start in tqdm(range(0, len(query_texts), batch_size), desc="Query batches"):
+            batch_texts = query_texts[start:start + batch_size]
+            with torch.no_grad():
+                emb = dense_model.encode(
+                    batch_texts,
+                    convert_to_tensor=True,
+                    device=device,
+                    show_progress_bar=False,
+                )
+            dense_queries_list.append(emb)
+
+        dense_queries = torch.cat(dense_queries_list, dim=0).cpu().float().numpy()
+        faiss.normalize_L2(dense_queries)
+
+        np.save(query_emb_path, dense_queries)
+        print(f"Saved query embeddings to {query_emb_path}")
 
     # Hybrid Retrieval + Reranking
     with jsonlines.open(HYBRID_OUTPUT_FILE, mode="a") as writer:
@@ -186,12 +211,12 @@ def hybrid_retrieval(passage_ids, passages, queries, name, alpha=ALPHA, model_na
             # Add sparse (BM25) scores
             for passage_text, s_score in zip(s_results[0], s_scores[0]):
                 pid = passage_ids[passages.index(passage_text)]
-                combined_scores[pid] = float((1 - alpha) * s_score)
+                combined_scores[pid] = float((1 - alpha_q) * s_score)
 
             # Add dense (FAISS) scores
             for d_score, idx in zip(d_scores[0], d_idx[0]):
                 pid = passage_ids[idx]
-                combined_scores[pid] = combined_scores.get(pid, 0.0) + float(alpha * d_score)
+                combined_scores[pid] = combined_scores.get(pid, 0.0) + float(alpha_q * d_score)
 
             # top_50 candidates
             top_candidates = sorted(
